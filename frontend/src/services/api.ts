@@ -1,0 +1,176 @@
+import axios from "axios";
+import type { AxiosInstance, AxiosError } from "axios";
+import { getClientMacForRequest } from "./clientMac";
+
+// Prefer environment variable for API base URL; fallback to localhost
+const API_BASE_URL =
+  typeof import.meta !== "undefined" &&
+  import.meta.env &&
+  import.meta.env.VITE_API_URL
+    ? import.meta.env.VITE_API_URL
+    : "http://127.0.0.1:8000/api";
+
+// Create axios instance
+export const apiClient: AxiosInstance = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+// Request interceptor: runs before EVERY request. Adds token + X-Client-MAC for report URLs.
+apiClient.interceptors.request.use(
+  async (config) => {
+    const token = localStorage.getItem("access_token");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    // Report MAC lock: for any /reports/ request, add X-Client-MAC if we have a MAC (from sessionStorage or local service).
+    const url = config.url ?? "";
+    if (url.includes("/reports/")) {
+      const mac = await getClientMacForRequest();
+      if (mac) {
+        config.headers["X-Client-MAC"] = mac;
+      }
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  },
+);
+
+// Response interceptor for 401 handling
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError) => {
+    if (error.response?.status === 401) {
+      // Auto logout on 401
+      localStorage.removeItem("access_token");
+      window.location.href = "/login";
+    }
+    return Promise.reject(error);
+  },
+);
+
+// Auth API calls
+export const authAPI = {
+  login: (email: string, password: string) =>
+    apiClient.post("/auth/login/", {
+      email,
+      username: email, // some backends expect username; send both
+      password,
+    }),
+
+  getProfile: () => apiClient.get("/auth/users/me/"),
+
+  logout: () => apiClient.post("/auth/logout/"),
+};
+
+// Reports API calls
+export const reportsAPI = {
+  listReports: () => apiClient.get("/reports/reports/"),
+
+  getReport: (id: number) => apiClient.get(`/reports/reports/${id}/`),
+
+  // Fetch report data with pagination from parquet file
+  fetchReportData: (
+    id: number,
+    params?: {
+      page?: number;
+      page_size?: number;
+      start_date?: string;
+      end_date?: string;
+      date_column?: string;
+    },
+  ) => apiClient.post(`/reports/${id}/execute/`, params || {}),
+
+  // Legacy: kept for backward compatibility
+  executeReport: (id: number, params?: Record<string, any>) =>
+    apiClient.post(`/reports/${id}/execute/`, params || {}),
+
+  // Columnwise search API
+  searchByColumn: (
+    id: number,
+    payload: {
+      search_field?: string; // Keep for backward compatibility
+      column?: string; // Backend expects 'column'
+      search_value: string;
+      search_type?: "exact" | "contains" | "startswith";
+      page?: number;
+      page_size?: number;
+    },
+  ) => {
+    // Map search_field to column if column is not provided
+    const requestPayload = {
+      column: payload.column || payload.search_field,
+      search_value: payload.search_value,
+      search_type: payload.search_type || "exact",
+      page: payload.page || 1,
+      page_size: payload.page_size || 50,
+    };
+    return apiClient.post(`/reports/${id}/search_by_column/`, requestPayload);
+  },
+
+  // Paginated data API - optimized for browsing large datasets
+  // Uses chunked loading from Parquet files (memory efficient)
+  getPaginatedData: (
+    id: number,
+    params?: {
+      page?: number;
+      page_size?: number;
+      filter_values?: Record<string, any>; // Runtime filters as key-value pairs
+    },
+  ) => {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append("page", params.page.toString());
+    if (params?.page_size)
+      queryParams.append("page_size", params.page_size.toString());
+    if (params?.filter_values) {
+      // Convert filter_values object to JSON string for query params
+      queryParams.append("filter_values", JSON.stringify(params.filter_values));
+    }
+    const queryString = queryParams.toString();
+    return apiClient.get(
+      `/reports/${id}/data${queryString ? `?${queryString}` : ""}`,
+    );
+  },
+
+  // Get cache status for a report
+  getCacheStatus: (id: number) =>
+    apiClient.get(`/reports/reports/${id}/cache_status/`),
+
+  // Get sync status for a report
+  getSyncStatus: (id: number) =>
+    apiClient.get(`/reports/reports/${id}/sync_status/`),
+
+  // Get sync history for a report
+  getSyncHistory: (id: number, params?: { limit?: number }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    const queryString = queryParams.toString();
+    return apiClient.get(
+      `/reports/reports/${id}/sync_history/${queryString ? `?${queryString}` : ""}`,
+    );
+  },
+
+  // Get execution history for a report
+  getExecutions: (id: number, params?: { limit?: number }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    const queryString = queryParams.toString();
+    return apiClient.get(
+      `/reports/reports/${id}/executions/${queryString ? `?${queryString}` : ""}`,
+    );
+  },
+
+  // Force refresh cache (admin only)
+  forceRefresh: (id: number) =>
+    apiClient.post(`/reports/reports/${id}/force_refresh/`),
+
+  // Clear cache (admin only)
+  clearCache: (id: number) =>
+    apiClient.delete(`/reports/reports/${id}/clear_cache/`),
+};
+
+export default apiClient;
