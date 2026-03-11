@@ -86,10 +86,37 @@ export const ProfilePage: React.FC = () => {
                 </span>
               </div>
 
-              <div className="flex justify-between items-center py-3">
+              <div className="flex justify-between items-center py-3 border-b border-gray-100">
                 <span className="text-gray-600">Last Name</span>
                 <span className="font-medium text-gray-800">
                   {user.last_name || "—"}
+                </span>
+              </div>
+
+              {user.role_name && (
+                <div className="flex justify-between items-center py-3 border-b border-gray-100">
+                  <span className="text-gray-600">Role</span>
+                  <span className="font-medium text-gray-800">
+                    {user.role_name}
+                  </span>
+                </div>
+              )}
+
+              {user.department && (
+                <div className="flex justify-between items-center py-3 border-b border-gray-100">
+                  <span className="text-gray-600">Department</span>
+                  <span className="font-medium text-gray-800">
+                    {user.department}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex justify-between items-center py-3">
+                <span className="text-gray-600">Branches</span>
+                <span className="font-medium text-gray-800">
+                  {user.branches_detail && user.branches_detail.length > 0
+                    ? user.branches_detail.map(b => b.name).join(", ")
+                    : "Master"}
                 </span>
               </div>
             </div>

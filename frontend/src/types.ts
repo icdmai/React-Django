@@ -8,11 +8,25 @@
 // Authentication Types
 // ============================================
 
+export interface BranchDetail {
+  id: number | null;
+  name: string;
+  code: string;
+  is_active: boolean;
+}
+
 export interface User {
   id: number;
   email: string;
   first_name: string;
   last_name: string;
+  role?: number;
+  role_name?: string;
+  branch?: number[];
+  branches_detail?: BranchDetail[];
+  department?: string;
+  mac_id?: string;
+  is_active?: boolean;
 }
 
 export interface LoginRequest {

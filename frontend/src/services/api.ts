@@ -136,6 +136,34 @@ export const reportsAPI = {
     );
   },
 
+  // Fetch report data by single branch code
+  getDataByBranch: (
+    reportName: string,
+    branchCode: string,
+    params?: { page?: number; page_size?: number },
+  ) => {
+    const queryParams = new URLSearchParams();
+    queryParams.append("report_name", reportName);
+    queryParams.append("branch_code", branchCode);
+    if (params?.page) queryParams.append("page", params.page.toString());
+    if (params?.page_size) queryParams.append("page_size", params.page_size.toString());
+    return apiClient.get(`/reports/data-by-branch/?${queryParams.toString()}`);
+  },
+
+  // Fetch report data for multiple branch codes at once
+  getDataByBranches: (
+    reportName: string,
+    branchCodes: string,
+    params?: { page?: number; page_size?: number },
+  ) => {
+    const queryParams = new URLSearchParams();
+    queryParams.append("report_name", reportName);
+    queryParams.append("branch_codes", branchCodes);
+    if (params?.page) queryParams.append("page", params.page.toString());
+    if (params?.page_size) queryParams.append("page_size", params.page_size.toString());
+    return apiClient.get(`/reports/data-by-branches/?${queryParams.toString()}`);
+  },
+
   // Get cache status for a report
   getCacheStatus: (id: number) =>
     apiClient.get(`/reports/reports/${id}/cache_status/`),

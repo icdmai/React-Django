@@ -1,11 +1,25 @@
 import React, { createContext, useState, useCallback, useEffect } from "react";
 import { authAPI } from "../services/api";
 
+interface BranchDetail {
+  id: number | null;
+  name: string;
+  code: string;
+  is_active: boolean;
+}
+
 interface User {
   id: number;
   email: string;
   first_name: string;
   last_name: string;
+  role?: number;
+  role_name?: string;
+  branch?: number[];
+  branches_detail?: BranchDetail[];
+  department?: string;
+  mac_id?: string;
+  is_active?: boolean;
 }
 
 interface AuthContextType {
