@@ -6,6 +6,7 @@ import {
   ErrorNotification,
   SuccessNotification,
 } from "../components";
+import ChangePasswordForm from "../components/ChangePasswordForm";
 
 export const ProfilePage: React.FC = () => {
   const { user, logout, isLoading } = useAuth();
@@ -121,6 +122,12 @@ export const ProfilePage: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Change Password Section */}
+        <div className="bg-white rounded-lg shadow p-8 mb-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Change Password</h3>
+          <ChangePasswordForm />
         </div>
 
         {/* Minimal Logout Section */}

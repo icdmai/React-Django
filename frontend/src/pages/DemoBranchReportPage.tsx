@@ -39,8 +39,6 @@ export const DemoBranchReportPage: React.FC = () => {
           page_size: pageSize,
         },
       });
-      // Log the backend response for debugging
-      console.log("Backend response", response.data);
       // Try to extract data from common properties or use the whole response if it's an array
       let extracted =
         response.data.results ||

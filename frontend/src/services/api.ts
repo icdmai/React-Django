@@ -55,16 +55,24 @@ apiClient.interceptors.response.use(
 
 // Auth API calls
 export const authAPI = {
-  login: (email: string, password: string) =>
-    apiClient.post("/auth/login/", {
-      email,
-      username: email, // some backends expect username; send both
+  login: (identifier: string, password: string) => {
+    const payload: Record<string, string> = {
       password,
-    }),
+      email: identifier,
+      username: identifier,
+    };
+    // If the identifier is numeric, also send as user_id
+    if (/^\d+$/.test(identifier.trim())) {
+      payload.user_id = identifier.trim();
+    }
+    return apiClient.post("/auth/login/", payload);
+  },
 
   getProfile: () => apiClient.get("/auth/users/me/"),
 
   logout: () => apiClient.post("/auth/logout/"),
+  changePassword: (old_password: string, new_password: string) =>
+    apiClient.post("/auth/password/change/", { old_password, new_password }),
 };
 
 // Reports API calls
@@ -111,6 +119,24 @@ export const reportsAPI = {
     };
     return apiClient.post(`/reports/${id}/search_by_column/`, requestPayload);
   },
+
+  // Cascade search API for multi-column filters
+  searchCascade: (
+    id: number,
+    payload: {
+      filters: Record<
+        string,
+        {
+          type: string;
+          search_type: string;
+          value: string;
+          value2?: string;
+        }
+      >;
+      page?: number;
+      page_size?: number;
+    },
+  ) => apiClient.post(`/reports/${id}/search_cascade/`, payload),
 
   // Paginated data API - optimized for browsing large datasets
   // Uses chunked loading from Parquet files (memory efficient)

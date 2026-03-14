@@ -65,6 +65,10 @@ interface UsePaginatedReportDataReturn {
     hasNext: boolean;
     hasPrevious: boolean;
   };
+  branchInfo?: {
+    branchCount: number;
+    branchesIncluded: string[] | null;
+  };
   chunkInfo: {
     loadedRows: number;
     chunkSize: number;
@@ -120,6 +124,10 @@ export const usePaginatedReportData = ({
   const [columnConfig, setColumnConfig] = useState<ColumnConfigItem[]>([]);
   // Add missing currentPage state
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [branchInfo, setBranchInfo] = useState<{
+    branchCount: number;
+    branchesIncluded: string[] | null;
+  } | null>(null);
 
   // Load initial chunk (50K rows)
   const loadInitialChunk = useCallback(async () => {
@@ -129,15 +137,6 @@ export const usePaginatedReportData = ({
       setIsLoading(true);
       setError(null);
 
-      // Log the chunkSize before making the API call
-      console.log(
-        "Report API call: reportId=",
-        reportId,
-        "page=1",
-        "page_size=",
-        chunkSize,
-      );
-      // Removed debug log for API call
       const response = await reportsAPI.getPaginatedData(reportId, {
         page: 1,
         page_size: chunkSize,
@@ -166,6 +165,22 @@ export const usePaginatedReportData = ({
       setTotalRows(totalRowsFromAPI || chunkData.length);
       setChunkStartIndex(0);
       setHasMoreChunks(hasMoreFromAPI);
+
+      // Capture branch metadata if provided by backend
+      if (
+        typeof responseData.branch_count === "number" ||
+        responseData.branches_included
+      ) {
+        setBranchInfo({
+          branchCount: Number(responseData.branch_count ?? 0),
+          branchesIncluded:
+            (Array.isArray(responseData.branches_included)
+              ? responseData.branches_included
+              : null) ?? null,
+        });
+      } else {
+        setBranchInfo(null);
+      }
 
       // Calculate pagination for loaded chunk
       const chunkPages = Math.ceil(chunkData.length / pageSize);
@@ -333,6 +348,7 @@ export const usePaginatedReportData = ({
       chunkSize,
       hasMoreChunks,
     },
+    branchInfo: branchInfo || undefined,
     goToPage,
     nextPage,
     previousPage,

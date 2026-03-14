@@ -27,23 +27,52 @@ export const downloadReportData = async (options: DownloadOptions): Promise<void
   } = options;
 
   try {
+    // If no filters are effectively set, avoid sending an empty filter_values object.
+    // Some backends treat filter_values={} differently from "no filter_values" at all.
+    const hasFilters =
+      filterValues &&
+      typeof filterValues === "object" &&
+      Object.keys(filterValues).length > 0;
+
     // First, get the first page to determine total pages
-    const firstPageResponse = await reportsAPI.getPaginatedData(reportId, {
-      page: 1,
-      page_size: pageSize,
-      filter_values: filterValues,
-    });
+    const firstPageResponse = await reportsAPI.getPaginatedData(
+      reportId,
+      hasFilters
+        ? {
+            page: 1,
+            page_size: pageSize,
+            filter_values: filterValues,
+          }
+        : {
+            page: 1,
+            page_size: pageSize,
+          },
+    );
 
     const firstPageData = firstPageResponse.data;
-    const totalPages = firstPageData.total_pages || 1;
-    const totalRows = firstPageData.count || 0;
 
-    if (totalRows === 0) {
+    // Support multiple backend response formats (data/results + count/total_rows)
+    const firstPageRows: Record<string, any>[] = Array.isArray(firstPageData.data)
+      ? firstPageData.data
+      : Array.isArray(firstPageData.results)
+      ? firstPageData.results
+      : [];
+    const totalRows =
+      firstPageData.count ||
+      firstPageData.total_rows ||
+      firstPageRows.length ||
+      0;
+    const totalPages =
+      firstPageData.total_pages ||
+      (pageSize > 0 ? Math.ceil(totalRows / pageSize) : 1) ||
+      1;
+
+    if (totalRows === 0 || firstPageRows.length === 0) {
       throw new Error("No data available to download");
     }
 
     // Collect all data
-    const allData: Record<string, any>[] = [...(firstPageData.results || [])];
+    const allData: Record<string, any>[] = [...firstPageRows];
     let rowsDownloaded = allData.length;
 
     // Report progress for first page
@@ -53,13 +82,26 @@ export const downloadReportData = async (options: DownloadOptions): Promise<void
 
     // Fetch remaining pages
     for (let page = 2; page <= totalPages; page++) {
-      const response = await reportsAPI.getPaginatedData(reportId, {
-        page,
-        page_size: pageSize,
-        filter_values: filterValues,
-      });
+      const response = await reportsAPI.getPaginatedData(
+        reportId,
+        hasFilters
+          ? {
+              page,
+              page_size: pageSize,
+              filter_values: filterValues,
+            }
+          : {
+              page,
+              page_size: pageSize,
+            },
+      );
 
-      const pageData = response.data.results || [];
+      const pageRaw = response.data;
+      const pageData: Record<string, any>[] = Array.isArray(pageRaw.data)
+        ? pageRaw.data
+        : Array.isArray(pageRaw.results)
+        ? pageRaw.results
+        : [];
       allData.push(...pageData);
       rowsDownloaded += pageData.length;
 

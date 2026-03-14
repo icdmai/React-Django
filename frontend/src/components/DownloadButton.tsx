@@ -36,7 +36,6 @@ export const DownloadButton: React.FC<DownloadButtonProps> = ({
     setIsDownloading(true);
     setError(null);
     setProgress(null);
-
     try {
       const { downloadReportData } = await import("../utils/downloadReport");
 

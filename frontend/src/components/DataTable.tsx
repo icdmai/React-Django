@@ -35,6 +35,7 @@ interface TableProps {
     chunkSize: number;
     hasMoreChunks: boolean;
   };
+  onFiltersChange?: (filters: Record<string, ColumnFilter>) => void; // Notify parent when filters change
 }
 
 type SortDirection = "asc" | "desc" | null;
@@ -53,6 +54,7 @@ export const DataTable: React.FC<TableProps> = ({
   onLoadMoreChunk,
   onBackendSearchFallback,
   chunkInfo,
+  onFiltersChange,
 }) => {
   const [noResultsInChunk, setNoResultsInChunk] = useState(false);
   const [isSearchingBackend, setIsSearchingBackend] = useState(false);
@@ -504,37 +506,43 @@ export const DataTable: React.FC<TableProps> = ({
       ...filterData,
     };
 
-    setColumnFilters((prev) => ({
-      ...prev,
-      [columnKey]: newFilter,
-    }));
+    setColumnFilters((prev) => {
+      const nextFilters: Record<string, ColumnFilter> = {
+        ...prev,
+        [columnKey]: newFilter,
+      };
+
+      // If value is effectively cleared, remove the filter entry
+      const current = nextFilters[columnKey];
+      const isEmptyValue =
+        (current.value === "" || current.value == null) &&
+        (current.operator !== "between" ||
+          current.value2 === "" ||
+          current.value2 == null);
+      if (isEmptyValue) {
+        delete nextFilters[columnKey];
+      }
+
+      // Notify parent about updated filters (for downloads, etc.)
+      if (onFiltersChange) {
+        onFiltersChange(nextFilters);
+      }
+
+      return nextFilters;
+    });
     setCurrentPage(1); // Reset to first page on filter
     setNoResultsInChunk(false); // Reset no results flag
-
-    // Hybrid strategy: Use client-side filtering first, backend fallback if needed
-    if (useClientSideFiltering) {
-      // Client-side filtering - filters are applied automatically via useMemo
-      // Auto-fallback to backend will be triggered by useEffect if no results
-    } else if (useBackendSearch && onColumnFilterChange) {
-      // Backend search mode - notify parent to trigger API call
-      if (filterData.value !== undefined) {
-        if (filterData.value === "" || filterData.value === null) {
-          onColumnFilterChange(columnKey, null);
-        } else {
-          onColumnFilterChange(columnKey, newFilter);
-        }
-      } else if (filterData.operator !== undefined) {
-        if (newFilter.value && newFilter.value !== "") {
-          onColumnFilterChange(columnKey, newFilter);
-        }
-      }
-    }
   };
 
   const clearFilter = (columnKey: string) => {
     setColumnFilters((prev) => {
       const updated = { ...prev };
       delete updated[columnKey];
+
+      if (onFiltersChange) {
+        onFiltersChange(updated);
+      }
+
       return updated;
     });
     setCurrentPage(1);
@@ -554,7 +562,21 @@ export const DataTable: React.FC<TableProps> = ({
     }
 
     setColumnFilters({});
+    if (onFiltersChange) {
+      onFiltersChange({});
+    }
     setCurrentPage(1);
+  };
+
+  // Explicitly apply backend filter (used on Enter key / Apply)
+  const applyBackendFilter = (columnKey: string) => {
+    if (!useBackendSearch || !onColumnFilterChange) return;
+    const filter = columnFilters[columnKey];
+    if (!filter || !filter.value) {
+      onColumnFilterChange(columnKey, null);
+      return;
+    }
+    onColumnFilterChange(columnKey, filter);
   };
 
   // Reset page when data changes
@@ -928,6 +950,11 @@ export const DataTable: React.FC<TableProps> = ({
                                           value: e.target.value,
                                         })
                                       }
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          applyBackendFilter(column.key);
+                                        }
+                                      }}
                                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     />
                                   </>
@@ -970,6 +997,11 @@ export const DataTable: React.FC<TableProps> = ({
                                           value: e.target.value,
                                         })
                                       }
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          applyBackendFilter(column.key);
+                                        }
+                                      }}
                                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                     />
                                     {columnFilters[column.key]?.operator ===
@@ -986,6 +1018,11 @@ export const DataTable: React.FC<TableProps> = ({
                                             value2: e.target.value,
                                           })
                                         }
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") {
+                                            applyBackendFilter(column.key);
+                                          }
+                                        }}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                       />
                                     )}
@@ -1024,6 +1061,11 @@ export const DataTable: React.FC<TableProps> = ({
                                           value: e.target.value,
                                         })
                                       }
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          applyBackendFilter(column.key);
+                                        }
+                                      }}
                                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                     />
                                     {columnFilters[column.key]?.operator ===
@@ -1039,6 +1081,11 @@ export const DataTable: React.FC<TableProps> = ({
                                             value2: e.target.value,
                                           })
                                         }
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") {
+                                            applyBackendFilter(column.key);
+                                          }
+                                        }}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                       />
                                     )}

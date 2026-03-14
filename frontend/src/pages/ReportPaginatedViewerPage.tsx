@@ -1,4 +1,3 @@
-console.log("ReportPaginatedViewerPage mounted");
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -59,6 +58,8 @@ export const ReportPaginatedViewerPage: React.FC = () => {
   const [isLoadingSearch, setIsLoadingSearch] = useState(false);
   const navigate = useNavigate();
 
+  // Log which branches are in effect for this user + report
+
   // Use the paginated data hook with chunked loading (only when not in search mode)
   const {
     data,
@@ -68,6 +69,7 @@ export const ReportPaginatedViewerPage: React.FC = () => {
     error: dataError,
     pagination,
     chunkInfo,
+    branchInfo,
     goToPage,
     nextPage,
     previousPage,
@@ -130,7 +132,6 @@ export const ReportPaginatedViewerPage: React.FC = () => {
 
     try {
       setIsLoadingSearch(true);
-      setError("");
 
       const searchTypeMap: Record<string, "exact" | "contains" | "startswith"> =
         {
@@ -163,14 +164,8 @@ export const ReportPaginatedViewerPage: React.FC = () => {
         hasPrevious: page > 1,
       });
     } catch (err: any) {
-      const macMsg = getReportAccessErrorMessage(err);
-      const errorMessage =
-        macMsg ||
-        err?.response?.data?.error ||
-        err?.response?.data?.detail ||
-        err?.message ||
-        "Failed to search report data";
-      setError(errorMessage);
+      // Swallow backend search errors for filters so the user stays on
+      // the current view and no error message is shown.
     } finally {
       setIsLoadingSearch(false);
     }
@@ -206,7 +201,6 @@ export const ReportPaginatedViewerPage: React.FC = () => {
 
       try {
         setIsLoadingSearch(true);
-        setError("");
 
         const { column, filter } = activeColumnFilter;
         const searchTypeMap: Record<
@@ -242,14 +236,8 @@ export const ReportPaginatedViewerPage: React.FC = () => {
           hasPrevious: prev.currentPage > 1,
         }));
       } catch (err: any) {
-        const macMsg = getReportAccessErrorMessage(err);
-        const errorMessage =
-          macMsg ||
-          err?.response?.data?.error ||
-          err?.response?.data?.detail ||
-          err?.message ||
-          "Failed to search report data";
-        setError(errorMessage);
+        // Swallow backend search pagination errors for filters so we keep
+        // the current data and do not show an error message.
       } finally {
         setIsLoadingSearch(false);
       }
@@ -351,6 +339,28 @@ export const ReportPaginatedViewerPage: React.FC = () => {
           }))
         : [];
 
+  // Keep backend-ready filterValues in sync with active column filters in DataTable
+  const handleTableFiltersChange = (
+    filters: Record<
+      string,
+      { type: string; value: string; operator?: string; value2?: string }
+    >,
+  ) => {
+    const backendFilters: Record<string, any> = {};
+
+    Object.entries(filters).forEach(([column, filter]) => {
+      if (!filter) return;
+      // Skip empty filters
+      if (!filter.value && filter.operator !== "between") return;
+
+      // For now, send the primary value only; backend treats filter_values
+      // as simple runtime filters (e.g. equality / basic operators).
+      backendFilters[column] = filter.value;
+    });
+
+    setFilterValues(backendFilters);
+  };
+
   return (
     <div className="min-h-[calc(100vh-64px)] px-2 py-3">
       <div className="w-full space-y-3">
@@ -418,6 +428,16 @@ export const ReportPaginatedViewerPage: React.FC = () => {
             <span className="rounded-full bg-white/10 px-2.5 py-1 ring-1 ring-white/15">
               Total {displayPagination.totalRows.toLocaleString()}
             </span>
+            {branchInfo && branchInfo.branchCount > 0 && (
+              <span className="rounded-full bg-white/10 px-2.5 py-1 ring-1 ring-white/15">
+                Branches:{" "}
+                {Array.isArray(branchInfo.branchesIncluded) &&
+                branchInfo.branchesIncluded.length > 0
+                  ? branchInfo.branchesIncluded.join(", ")
+                  : "N/A"}{" "}
+                ({branchInfo.branchCount})
+              </span>
+            )}
             {chunkInfo && !isSearchMode && (
               <span className="rounded-full bg-emerald-500/20 px-2.5 py-1 ring-1 ring-emerald-500/30 text-emerald-200">
                 Loaded {chunkInfo.loadedRows.toLocaleString()} rows
@@ -529,6 +549,7 @@ export const ReportPaginatedViewerPage: React.FC = () => {
                 onLoadMoreChunk={loadNextChunk}
                 onBackendSearchFallback={handleBackendSearchFallback}
                 chunkInfo={chunkInfo}
+                onFiltersChange={handleTableFiltersChange}
               />
             </div>
 

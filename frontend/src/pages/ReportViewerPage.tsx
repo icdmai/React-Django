@@ -62,6 +62,11 @@ export const ReportViewerPage: React.FC = () => {
   const [isLoadingCacheStatus, setIsLoadingCacheStatus] = useState(false);
   const [usePaginatedAPI, setUsePaginatedAPI] = useState(false);
   const [columnConfig, setColumnConfig] = useState<ColumnConfigItem[]>([]);
+  const [branchInfo, setBranchInfo] = useState<{
+    branchCount: number;
+    branchesIncluded: string[] | null;
+  } | null>(null);
+  const [filterMessage, setFilterMessage] = useState<string | null>(null);
   const navigate = useNavigate();
 
   // Column-level filtering logic
@@ -154,47 +159,81 @@ export const ReportViewerPage: React.FC = () => {
     setActiveColumnFilter({ column, filter });
     setSearchPage(1);
     setCurrentPage(1);
+    setFilterMessage(null);
 
     try {
-      // Use isLoading state from useState
-      setIsLoading(true);
+      // Only show data loading state, keep overall report page visible
+      setIsLoadingData(true);
       setError("");
 
-      // Map operator to search_type
-      const searchTypeMap: Record<string, "exact" | "contains" | "startswith"> =
-        {
-          equals: "exact",
-          contains: "contains",
-          startswith: "startswith",
-        };
-      const searchType =
-        searchTypeMap[filter.operator || "contains"] || "contains";
+      // Map operator to search_type for cascade API
+      const searchTypeMap: Record<string, string> = {
+        equals: "exact",
+        contains: "contains",
+        startswith: "startswith",
+        gt: "gt",
+        gte: "gte",
+        lt: "lt",
+        lte: "lte",
+        between: "between",
+      };
+      const op = filter.operator || "contains";
+      const search_type = searchTypeMap[op] || "contains";
 
-      const searchResponse = await reportsAPI.searchByColumn(Number(id), {
-        column,
-        search_value: filter.value,
-        search_type: searchType,
+      const payload = {
+        filters: {
+          [column]: {
+            type: filter.type,
+            search_type,
+            value: filter.value,
+            ...(op === "between" && (filter as any).value2
+              ? { value2: (filter as any).value2 }
+              : {}),
+          },
+        },
         page: 1,
         page_size: pageSize,
-      });
+      };
+
+      const searchResponse = await reportsAPI.searchCascade(
+        Number(id),
+        payload,
+      );
 
       const response = searchResponse.data;
-      const searchResults = response?.records || response?.data || [];
-      const total = response?.total_records || response?.count || 0;
+      // If no matches found, keep existing data and show a small message
+      if (response && response.found === false) {
+        setFilterMessage(
+          response.message || "No records match the current filters",
+        );
+      } else {
+        const searchResults =
+          response?.results || response?.data || response?.records || [];
+        const total =
+          response?.total_rows ||
+          response?.count ||
+          response?.total_records ||
+          0;
 
-      setData(searchResults);
-      setTotalRecords(total);
-      setHasMore(response?.has_next || searchResults.length < total);
-      setDataSource("parquet");
+        setData(searchResults);
+        setTotalRecords(total);
+        setHasMore(response?.has_next || searchResults.length < total);
+        setDataSource("parquet");
+        setFilterMessage(null);
+      }
     } catch (err: any) {
-      const macMsg = getReportAccessErrorMessage(err);
-      const errorMessage =
-        macMsg ||
-        err?.response?.data?.error ||
+      // For search errors, keep the current data.
+      // If backend returns a branch/permission 404, show its message inline.
+      const status = err?.response?.status;
+      const backendMsg =
         err?.response?.data?.detail ||
-        err?.message ||
-        "Failed to search report data";
-      setError(errorMessage);
+        err?.response?.data?.message ||
+        err?.message;
+      if (status === 404) {
+        setFilterMessage(
+          backendMsg || "No data found for your assigned branch(es).",
+        );
+      }
     } finally {
       setIsLoadingData(false);
     }
@@ -206,47 +245,76 @@ export const ReportViewerPage: React.FC = () => {
       if (!report || !id || !isSearchMode || !activeColumnFilter) return;
 
       try {
-        setIsLoading(true);
+        // Only show data loading state during search pagination
+        setIsLoadingData(true);
         setError("");
 
         const { column, filter } = activeColumnFilter;
-        const searchTypeMap: Record<
-          string,
-          "exact" | "contains" | "startswith"
-        > = {
+        const searchTypeMap: Record<string, string> = {
           equals: "exact",
           contains: "contains",
           startswith: "startswith",
+          gt: "gt",
+          gte: "gte",
+          lt: "lt",
+          lte: "lte",
+          between: "between",
         };
-        const searchType =
-          searchTypeMap[filter.operator || "contains"] || "contains";
+        const op = filter.operator || "contains";
+        const search_type = searchTypeMap[op] || "contains";
 
-        const searchResponse = await reportsAPI.searchByColumn(Number(id), {
-          column,
-          search_value: filter.value,
-          search_type: searchType,
+        const payload = {
+          filters: {
+            [column]: {
+              type: filter.type,
+              search_type,
+              value: filter.value,
+              ...(op === "between" && (filter as any).value2
+                ? { value2: (filter as any).value2 }
+                : {}),
+            },
+          },
           page: searchPage,
           page_size: pageSize,
-        });
+        };
+
+        const searchResponse = await reportsAPI.searchCascade(
+          Number(id),
+          payload,
+        );
 
         const response = searchResponse.data;
-        const searchResults = response?.records || response?.data || [];
-        const total = response?.total_records || response?.count || 0;
+        if (response && response.found === false) {
+          setFilterMessage(
+            response.message || "No records match the current filters",
+          );
+        } else {
+          const searchResults =
+            response?.results || response?.data || response?.records || [];
+          const total =
+            response?.total_rows ||
+            response?.count ||
+            response?.total_records ||
+            0;
 
-        setData(searchResults);
-        setTotalRecords(total);
-        setHasMore(response?.has_next || searchResults.length < total);
+          setData(searchResults);
+          setTotalRecords(total);
+          setHasMore(response?.has_next || searchResults.length < total);
+          setFilterMessage(null);
+        }
       } catch (err: any) {
-        const macMsg = getReportAccessErrorMessage(err);
-        const errorMessage =
-          macMsg ||
-          err?.response?.data?.error ||
+        const status = err?.response?.status;
+        const backendMsg =
           err?.response?.data?.detail ||
-          err?.message ||
-          "Failed to search report data";
-        setError(errorMessage);
+          err?.response?.data?.message ||
+          err?.message;
+        if (status === 404) {
+          setFilterMessage(
+            backendMsg || "No data found for your assigned branch(es).",
+          );
+        }
       } finally {
-        setIsLoading(false);
+        setIsLoadingData(false);
       }
     };
 
@@ -301,6 +369,22 @@ export const ReportViewerPage: React.FC = () => {
           setTotalRecords(total);
           setHasMore(response.has_next || currentPage < totalPages);
           setDataSource("parquet"); // Paginated API always uses parquet
+
+          // Capture branch metadata if provided by backend
+          if (
+            typeof response.branch_count === "number" ||
+            response.branches_included
+          ) {
+            setBranchInfo({
+              branchCount: Number(response.branch_count ?? 0),
+              branchesIncluded:
+                (Array.isArray(response.branches_included)
+                  ? response.branches_included
+                  : null) ?? null,
+            });
+          } else {
+            setBranchInfo(null);
+          }
         } else {
           // Use execute API - for aggregation/slicing
           const params: any = {
@@ -347,6 +431,22 @@ export const ReportViewerPage: React.FC = () => {
             console.warn(
               `⚠️ WARNING: Data is from ${actualDataSource}, NOT parquet!`,
             );
+          }
+
+          // Capture branch metadata here as well if backend includes it
+          if (
+            typeof response.branch_count === "number" ||
+            response.branches_included
+          ) {
+            setBranchInfo({
+              branchCount: Number(response.branch_count ?? 0),
+              branchesIncluded:
+                (Array.isArray(response.branches_included)
+                  ? response.branches_included
+                  : null) ?? null,
+            });
+          } else {
+            setBranchInfo(null);
           }
         }
       } catch (err: any) {
@@ -461,6 +561,11 @@ export const ReportViewerPage: React.FC = () => {
                 {report?.description}
               </p>
             )}
+            {filterMessage && (
+              <p className="text-[11px] text-amber-200 mt-0.5">
+                {filterMessage}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs text-white/80">
             <span className="rounded-full bg-white/10 px-2.5 py-1 ring-1 ring-white/15 flex items-center gap-1">
@@ -497,10 +602,14 @@ export const ReportViewerPage: React.FC = () => {
             <span className="rounded-full bg-white/10 px-2.5 py-1 ring-1 ring-white/15">
               Total {(totalRecords || data.length).toLocaleString()}
             </span>
-            {cacheStatus && cacheStatus.parquet_exists && (
-              <span className="rounded-full bg-emerald-500/20 px-2.5 py-1 ring-1 ring-emerald-500/30 text-emerald-200">
-                {cacheStatus.rows?.toLocaleString()} rows •{" "}
-                {cacheStatus.size_mb?.toFixed(1)} MB
+            {branchInfo && branchInfo.branchCount > 0 && (
+              <span className="rounded-full bg-white/10 px-2.5 py-1 ring-1 ring-white/15">
+                Branches:{" "}
+                {Array.isArray(branchInfo.branchesIncluded) &&
+                branchInfo.branchesIncluded.length > 0
+                  ? branchInfo.branchesIncluded.join(", ")
+                  : "N/A"}{" "}
+                ({branchInfo.branchCount})
               </span>
             )}
             {cacheStatus && !cacheStatus.parquet_exists && (
