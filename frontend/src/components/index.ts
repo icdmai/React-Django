@@ -4,3 +4,5 @@ export { LoadingSpinner } from "./LoadingSpinner";
 export { ErrorNotification, SuccessNotification } from "./Notifications";
 export { DataTable } from "./DataTable";
 export { DownloadButton } from "./DownloadButton";
+export { ReportWidget } from "./ReportWidget";
+export { StatCard } from "./StatCard";

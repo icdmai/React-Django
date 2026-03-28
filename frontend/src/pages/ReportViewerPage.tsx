@@ -67,6 +67,7 @@ export const ReportViewerPage: React.FC = () => {
     branchesIncluded: string[] | null;
   } | null>(null);
   const [filterMessage, setFilterMessage] = useState<string | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
   const navigate = useNavigate();
 
   // Column-level filtering logic
@@ -151,6 +152,7 @@ export const ReportViewerPage: React.FC = () => {
       setSearchPage(1);
       setCurrentPage(1);
       setData([]);
+      setFilterMessage(null);
       return;
     }
 
@@ -234,6 +236,79 @@ export const ReportViewerPage: React.FC = () => {
           backendMsg || "No data found for your assigned branch(es).",
         );
       }
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  // Hybrid fallback: only called by DataTable when client-side filtering
+  // finds no rows in currently loaded data.
+  const handleBackendSearchFallback = async (filters: Record<string, any>) => {
+    if (!report || !id || Object.keys(filters).length === 0) return;
+
+    try {
+      setIsLoadingData(true);
+      setFilterMessage(null);
+
+      const searchTypeMap: Record<string, string> = {
+        equals: "exact",
+        contains: "contains",
+        startswith: "startswith",
+        gt: "gt",
+        gte: "gte",
+        lt: "lt",
+        lte: "lte",
+        between: "between",
+      };
+
+      const mappedFilters = Object.fromEntries(
+        Object.entries(filters).map(([column, f]: any) => {
+          const op = f?.operator || "contains";
+          return [
+            column,
+            {
+              type: f?.type || "text",
+              search_type: searchTypeMap[op] || "contains",
+              value: f?.value ?? "",
+              ...(op === "between" && f?.value2 ? { value2: f.value2 } : {}),
+            },
+          ];
+        }),
+      );
+
+      const payload = {
+        filters: mappedFilters,
+        page: 1,
+        page_size: pageSize,
+      };
+
+      const searchResponse = await reportsAPI.searchCascade(Number(id), payload);
+      const response = searchResponse.data;
+
+      if (response && response.found === false) {
+        setFilterMessage(response.message || "No records match the current filters");
+        return;
+      }
+
+      const searchResults =
+        response?.results || response?.data || response?.records || [];
+      const total =
+        response?.total_rows || response?.count || response?.total_records || 0;
+
+      setData(searchResults);
+      setTotalRecords(total);
+      setHasMore(response?.has_next || searchResults.length < total);
+      setIsSearchMode(true);
+
+      // Keep first filter for search pagination fallback.
+      const firstEntry = Object.entries(filters)[0];
+      if (firstEntry) {
+        const [firstColumn, firstFilter] = firstEntry as any;
+        setActiveColumnFilter({ column: firstColumn, filter: firstFilter });
+      }
+      setSearchPage(1);
+    } catch {
+      // Keep existing grid when fallback search fails.
     } finally {
       setIsLoadingData(false);
     }
@@ -471,7 +546,7 @@ export const ReportViewerPage: React.FC = () => {
     };
 
     fetchData();
-  }, [report, id, currentPage, pageSize, usePaginatedAPI, isSearchMode]);
+  }, [report, id, currentPage, pageSize, usePaginatedAPI, isSearchMode, refreshTick]);
 
   const loadMoreData = () => {
     if (!isLoadingData && hasMore) {
@@ -484,14 +559,19 @@ export const ReportViewerPage: React.FC = () => {
   };
 
   const refreshData = () => {
-    setCurrentPage(1);
+    setIsSearchMode(false);
+    setActiveColumnFilter(null);
+    setSearchPage(1);
+    setFilterMessage(null);
     setData([]);
+    setCurrentPage(1);
+    setRefreshTick((t) => t + 1);
   };
 
   // When date range changes, reset to page 1
   // Date filter reset logic removed
 
-  if (isLoading || isLoadingData) {
+  if (isLoading) {
     return <LoadingSpinner message="Loading report..." />;
   }
 
@@ -512,11 +592,17 @@ export const ReportViewerPage: React.FC = () => {
   const effectiveColumnConfig =
     columnConfig.length > 0 ? columnConfig : fromReport;
   const firstRow = filteredData.length > 0 ? filteredData[0] : null;
+  const normalizeKey = (s: string): string =>
+    String(s)
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, ""); // ignore spaces, underscores, punctuation
   const resolveKey = (fieldName: string): string => {
     if (!firstRow) return fieldName;
     if (fieldName in firstRow) return fieldName;
-    const lower = fieldName.toLowerCase();
-    const found = Object.keys(firstRow).find((k) => k.toLowerCase() === lower);
+    const target = normalizeKey(fieldName);
+    const found = Object.keys(firstRow).find(
+      (k) => normalizeKey(k) === target,
+    );
     return found ?? fieldName;
   };
   const columns =
@@ -675,26 +761,6 @@ export const ReportViewerPage: React.FC = () => {
                       ` · Filtered ${filteredData.length.toLocaleString()}`}
                   </span>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={refreshData}
-                    disabled={isLoadingData}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white ring-1 ring-white/15 hover:bg-white/15 disabled:opacity-50"
-                  >
-                    <svg
-                      className="w-3.5 h-3.5"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                    Refresh
-                  </button>
-                </div>
               </div>
             </div>
 
@@ -702,9 +768,12 @@ export const ReportViewerPage: React.FC = () => {
               <DataTable
                 columns={columns}
                 data={filteredData}
+                loadedChunk={data}
                 compact
                 useBackendSearch={true}
+                useClientSideFiltering={true}
                 onColumnFilterChange={handleColumnFilterChange}
+                onBackendSearchFallback={handleBackendSearchFallback}
               />
             </div>
 

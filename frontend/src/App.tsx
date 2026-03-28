@@ -1,5 +1,11 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+} from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { Navbar, Sidebar } from "./components";
 import {
@@ -8,6 +14,7 @@ import {
   ReportsListPage,
   ReportViewerPage,
   ProfilePage,
+  ChangePasswordPage,
   IframeReportPage,
   MultiBranchIframeReportPage,
   MultiBranchReportViewerPage,
@@ -18,8 +25,19 @@ import PublicReportViewerPage from "./pages/PublicReportViewerPage";
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { token } = useAuth();
-  return token ? <>{children}</> : <Navigate to="/login" replace />;
+  const { token, user } = useAuth();
+  const location = useLocation();
+
+  if (!token) return <Navigate to="/login" replace />;
+
+  if (
+    user?.must_change_password &&
+    location.pathname !== "/change-password"
+  ) {
+    return <Navigate to="/change-password" replace />;
+  }
+
+  return <>{children}</>;
 };
 
 // Layout with Sidebar and Navbar (default)
@@ -72,7 +90,27 @@ function AppRoutes() {
 
       {/* Protected Routes with Layout */}
       <Route
+        path="/change-password"
+        element={
+          <ProtectedRoute>
+            <MainLayout>
+              <ChangePasswordPage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/dashboard"
+        element={
+          <ProtectedRoute>
+            <MainLayout>
+              <DashboardPage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/dashboard/:dashboardId"
         element={
           <ProtectedRoute>
             <MainLayout>

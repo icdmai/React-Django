@@ -36,6 +36,12 @@ export const DownloadButton: React.FC<DownloadButtonProps> = ({
     setIsDownloading(true);
     setError(null);
     setProgress(null);
+
+    // Debug logging
+    console.log("DownloadButton: reportId", reportId);
+    console.log("DownloadButton: filterValues", filterValues);
+    // Log the full filterValues object for inspection
+    console.log("DownloadButton: filterValues (full)", JSON.stringify(filterValues, null, 2));
     try {
       const { downloadReportData } = await import("../utils/downloadReport");
 

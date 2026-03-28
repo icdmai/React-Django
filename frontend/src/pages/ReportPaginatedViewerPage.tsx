@@ -58,7 +58,24 @@ export const ReportPaginatedViewerPage: React.FC = () => {
   const [isLoadingSearch, setIsLoadingSearch] = useState(false);
   const navigate = useNavigate();
 
-  // Log which branches are in effect for this user + report
+  // Fully reset search state and reload from scratch
+  const handleRefresh = () => {
+    setIsSearchMode(false);
+    setActiveColumnFilter(null);
+    setSearchData([]);
+    setSearchPagination({
+      currentPage: 1,
+      totalPages: 1,
+      totalRows: 0,
+      hasNext: false,
+      hasPrevious: false,
+    });
+    // If not in search mode, refresh directly; if we were in search mode the
+    // hook's enabled flag will flip to true on next render and auto-reload.
+    if (!isSearchMode) {
+      refresh();
+    }
+  };
 
   // Use the paginated data hook with chunked loading (only when not in search mode)
   const {
@@ -478,7 +495,7 @@ export const ReportPaginatedViewerPage: React.FC = () => {
               </select>
             </div>
             <button
-              onClick={refresh}
+              onClick={handleRefresh}
               disabled={isLoadingData}
               className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white ring-1 ring-white/15 hover:bg-white/15 disabled:opacity-50"
             >

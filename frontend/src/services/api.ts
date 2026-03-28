@@ -81,6 +81,10 @@ export const reportsAPI = {
 
   getReport: (id: number) => apiClient.get(`/reports/reports/${id}/`),
 
+  // Dashboard by id (returns name + dashboard_widgets[])
+  getDashboard: (dashboardId: number) =>
+    apiClient.get(`/reports/${dashboardId}/`),
+
   // Fetch report data with pagination from parquet file
   fetchReportData: (
     id: number,

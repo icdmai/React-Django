@@ -111,6 +111,17 @@ export const DataTable: React.FC<TableProps> = ({
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
   const resizeXRef = React.useRef<number | null>(null);
 
+  const normalizeKey = (key: string): string =>
+    String(key).toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  const getCellValue = (row: Record<string, any>, key: string) => {
+    if (row == null) return undefined;
+    if (key in row) return row[key];
+    const target = normalizeKey(key);
+    const matched = Object.keys(row).find((k) => normalizeKey(k) === target);
+    return matched ? row[matched] : undefined;
+  };
+
   // Keep column order and widths in sync when columns prop changes (e.g., new report schema)
   React.useEffect(() => {
     setColumnOrder((prev) => {
@@ -225,9 +236,9 @@ export const DataTable: React.FC<TableProps> = ({
     key: string,
   ): "text" | "number" | "date" | "boolean" => {
     if (data.length === 0) return "text";
-    const sample = data.find((row) => row[key] != null);
+    const sample = data.find((row) => getCellValue(row, key) != null);
     if (!sample) return "text";
-    const value = sample[key];
+    const value = getCellValue(sample, key);
     if (typeof value === "number") return "number";
     if (typeof value === "boolean") return "boolean";
     // Check if it looks like a date
@@ -262,7 +273,7 @@ export const DataTable: React.FC<TableProps> = ({
       if (!filter.value && filter.operator !== "between") return;
 
       result = result.filter((row) => {
-        const cellValue = row[key];
+        const cellValue = getCellValue(row, key);
         if (cellValue == null) return false;
 
         switch (filter.type) {
@@ -287,7 +298,7 @@ export const DataTable: React.FC<TableProps> = ({
             const filterNum = Number(filter.value);
             if (isNaN(numValue) || isNaN(filterNum)) return false;
 
-            switch (filter.operator) {
+            switch (filter.operator || "equals") {
               case "equals":
                 return numValue === filterNum;
               case "gt":
@@ -304,7 +315,7 @@ export const DataTable: React.FC<TableProps> = ({
                 return numValue >= filterNum && numValue <= filterNum2;
               }
               default:
-                return true;
+                return numValue === filterNum;
             }
           }
 
@@ -314,7 +325,7 @@ export const DataTable: React.FC<TableProps> = ({
             if (isNaN(dateValue.getTime()) || isNaN(filterDate.getTime()))
               return false;
 
-            switch (filter.operator) {
+            switch (filter.operator || "equals") {
               case "equals":
                 return dateValue.toDateString() === filterDate.toDateString();
               case "gt":
@@ -332,7 +343,7 @@ export const DataTable: React.FC<TableProps> = ({
                 return dateValue >= filterDate && dateValue <= filterDate2;
               }
               default:
-                return true;
+                return dateValue.toDateString() === filterDate.toDateString();
             }
           }
 
@@ -343,11 +354,10 @@ export const DataTable: React.FC<TableProps> = ({
     });
 
     // Check if client-side filtering returned no results
-    if (
-      useClientSideFiltering &&
-      result.length === 0 &&
-      Object.keys(columnFilters).length > 0
-    ) {
+    const hasActiveFilters = Object.values(columnFilters).some(
+      (f) => f.value || f.operator === "between",
+    );
+    if (useClientSideFiltering && result.length === 0 && hasActiveFilters) {
       // Mark that no results found in loaded chunk
       setNoResultsInChunk(true);
     } else {
@@ -368,8 +378,8 @@ export const DataTable: React.FC<TableProps> = ({
     if (!sortColumn || !sortDirection) return filteredData;
 
     return [...filteredData].sort((a, b) => {
-      const aVal = a[sortColumn];
-      const bVal = b[sortColumn];
+      const aVal = getCellValue(a, sortColumn);
+      const bVal = getCellValue(b, sortColumn);
 
       if (aVal == null && bVal == null) return 0;
       if (aVal == null) return sortDirection === "asc" ? 1 : -1;
@@ -426,72 +436,41 @@ export const DataTable: React.FC<TableProps> = ({
 
   // Auto-trigger backend search if no results found in chunk (with debounce)
   React.useEffect(() => {
+    const hasActiveFilters = Object.values(columnFilters).some(
+      (f) => f.value && f.value !== "" && f.value !== null,
+    );
+
     if (
       useClientSideFiltering &&
       noResultsInChunk &&
-      Object.keys(columnFilters).length > 0 &&
+      hasActiveFilters &&
       onBackendSearchFallback &&
       !isSearchingBackend
     ) {
-      // Wait 1.5 seconds after last filter change to avoid too many API calls
+      // Show searching state immediately so user sees feedback right away
+      setIsSearchingBackend(true);
+
+      // Debounce so we don't fire on every keystroke while user is still typing
       const timeoutId = setTimeout(async () => {
-        // Check again if still no results (re-check filteredData)
-        const hasActiveFilters = Object.values(columnFilters).some(
-          (f) => f.value && f.value !== "" && f.value !== null,
-        );
-        if (hasActiveFilters) {
-          // Re-check if filteredData is still empty
-          const sourceData = loadedChunk || data;
-          if (sourceData && sourceData.length > 0) {
-            // Apply filters again to check
-            let testResult = [...sourceData];
-            Object.entries(columnFilters).forEach(([key, filter]) => {
-              if (!filter.value && filter.operator !== "between") return;
-              testResult = testResult.filter((row) => {
-                const cellValue = row[key];
-                if (cellValue == null) return false;
-                // Simple check - if it's a text filter
-                if (filter.type === "text") {
-                  const cellStr = String(cellValue).toLowerCase();
-                  const filterStr = filter.value.toLowerCase();
-                  const operator = filter.operator || "contains";
-                  if (operator === "equals") return cellStr === filterStr;
-                  if (operator === "contains")
-                    return cellStr.includes(filterStr);
-                  if (operator === "startswith")
-                    return cellStr.startsWith(filterStr);
-                }
-                return true; // For other types, assume match for now
-              });
-            });
-
-            // If still no results, trigger backend search
-            if (testResult.length === 0) {
-              setIsSearchingBackend(true);
-              try {
-                await onBackendSearchFallback(columnFilters);
-              } catch (err) {
-                console.error("Backend search fallback failed:", err);
-              } finally {
-                setIsSearchingBackend(false);
-              }
-            }
-          }
+        try {
+          await onBackendSearchFallback(columnFilters);
+        } catch (err) {
+          console.error("Backend search fallback failed:", err);
+        } finally {
+          setIsSearchingBackend(false);
         }
-      }, 1500); // Wait 1.5 seconds after last filter change
+      }, 600);
 
-      return () => clearTimeout(timeoutId);
-    } else {
-      setIsSearchingBackend(false);
+      return () => {
+        clearTimeout(timeoutId);
+        setIsSearchingBackend(false);
+      };
     }
   }, [
     noResultsInChunk,
     columnFilters,
     useClientSideFiltering,
     onBackendSearchFallback,
-    isSearchingBackend,
-    loadedChunk,
-    data,
   ]);
 
   const handleFilterChange = (
@@ -512,26 +491,33 @@ export const DataTable: React.FC<TableProps> = ({
         [columnKey]: newFilter,
       };
 
-      // If value is effectively cleared, remove the filter entry
-      const current = nextFilters[columnKey];
-      const isEmptyValue =
-        (current.value === "" || current.value == null) &&
-        (current.operator !== "between" ||
-          current.value2 === "" ||
-          current.value2 == null);
-      if (isEmptyValue) {
-        delete nextFilters[columnKey];
-      }
-
       // Notify parent about updated filters (for downloads, etc.)
+      // Only pass filters that have actual values to the parent
       if (onFiltersChange) {
-        onFiltersChange(nextFilters);
+        const activeFilters = Object.fromEntries(
+          Object.entries(nextFilters).filter(
+            ([, f]) => f.value || f.operator === "between",
+          ),
+        );
+        onFiltersChange(activeFilters);
       }
 
       return nextFilters;
     });
     setCurrentPage(1); // Reset to first page on filter
     setNoResultsInChunk(false); // Reset no results flag
+
+    // In backend mode, clear server-side filter immediately when input becomes empty.
+    // Applying non-empty filters is explicit via Enter key or "Apply Filter" button.
+    if (
+      useBackendSearch &&
+      !useClientSideFiltering &&
+      onColumnFilterChange &&
+      filterData.value !== undefined &&
+      (filterData.value === "" || filterData.value === null)
+    ) {
+      onColumnFilterChange(columnKey, null);
+    }
   };
 
   const clearFilter = (columnKey: string) => {
@@ -547,8 +533,8 @@ export const DataTable: React.FC<TableProps> = ({
     });
     setCurrentPage(1);
 
-    // Notify parent if backend search is enabled
-    if (useBackendSearch && onColumnFilterChange) {
+    // Notify parent only when backend search is active (not client-side)
+    if (useBackendSearch && !useClientSideFiltering && onColumnFilterChange) {
       onColumnFilterChange(columnKey, null);
     }
   };
@@ -570,7 +556,8 @@ export const DataTable: React.FC<TableProps> = ({
 
   // Explicitly apply backend filter (used on Enter key / Apply)
   const applyBackendFilter = (columnKey: string) => {
-    if (!useBackendSearch || !onColumnFilterChange) return;
+    if (!useBackendSearch || !onColumnFilterChange || useClientSideFiltering)
+      return;
     const filter = columnFilters[columnKey];
     if (!filter || !filter.value) {
       onColumnFilterChange(columnKey, null);
@@ -593,62 +580,12 @@ export const DataTable: React.FC<TableProps> = ({
   }
 
   if (data.length === 0 && !isLoading) {
-    // Show message if no results found in loaded chunk
-    if (
-      useClientSideFiltering &&
-      noResultsInChunk &&
-      Object.keys(columnFilters).length > 0
-    ) {
+    // Chunk had no results - backend search is auto-triggered, show spinner
+    if (useClientSideFiltering && noResultsInChunk) {
       return (
-        <div className="text-center py-8">
-          <div className="text-gray-500 mb-4">
-            <p className="text-lg font-semibold mb-2">
-              No results found in loaded{" "}
-              {chunkInfo?.loadedRows.toLocaleString() || "data"} rows
-            </p>
-            <p className="text-sm text-gray-400">
-              The data you're looking for might be in the rest of the dataset
-            </p>
-          </div>
-          {onBackendSearchFallback && (
-            <div className="space-y-3 mt-4">
-              {isSearchingBackend ? (
-                <div className="flex items-center justify-center gap-2 text-blue-600">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                  <span>Searching in full dataset...</span>
-                </div>
-              ) : (
-                <>
-                  <button
-                    onClick={async () => {
-                      setIsSearchingBackend(true);
-                      try {
-                        await onBackendSearchFallback(columnFilters);
-                      } catch (err) {
-                        console.error("Backend search failed:", err);
-                      } finally {
-                        setIsSearchingBackend(false);
-                      }
-                    }}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
-                  >
-                    Search in Full Dataset
-                  </button>
-                  {chunkInfo && chunkInfo.hasMoreChunks && onLoadMoreChunk && (
-                    <div className="text-sm text-gray-500 mt-2">
-                      or{" "}
-                      <button
-                        onClick={onLoadMoreChunk}
-                        className="text-blue-600 hover:underline"
-                      >
-                        load next {chunkInfo.chunkSize.toLocaleString()} rows
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+        <div className="flex items-center justify-center gap-2 py-10 text-blue-600">
+          <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-600 border-t-transparent" />
+          <span className="text-sm font-medium">Searching full dataset...</span>
         </div>
       );
     }
@@ -659,7 +596,9 @@ export const DataTable: React.FC<TableProps> = ({
 
   return (
     <div className="space-y-3">
-      {Object.keys(columnFilters).length > 0 && (
+      {Object.entries(columnFilters).some(
+        ([, f]) => f.value || f.operator === "between",
+      ) && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 flex-wrap">
@@ -667,7 +606,9 @@ export const DataTable: React.FC<TableProps> = ({
                 Active Filters{" "}
                 {useClientSideFiltering ? "(Client-side)" : "(Backend)"}:
               </span>
-              {Object.entries(columnFilters).map(([key, filter]) => (
+              {Object.entries(columnFilters)
+                .filter(([, f]) => f.value || f.operator === "between")
+                .map(([key, filter]) => (
                 <span
                   key={key}
                   className="inline-flex items-center gap-2 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm"
@@ -694,10 +635,9 @@ export const DataTable: React.FC<TableProps> = ({
                 </span>
               )}
               {noResultsInChunk && useClientSideFiltering && (
-                <span className="text-xs text-orange-700 bg-orange-100 px-2 py-1 rounded">
-                  {isSearchingBackend
-                    ? "Searching full dataset..."
-                    : "Not found in loaded chunk"}
+                <span className="text-xs text-blue-700 bg-blue-100 px-2 py-1 rounded inline-flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  Searching full dataset...
                 </span>
               )}
             </div>
@@ -1092,6 +1032,18 @@ export const DataTable: React.FC<TableProps> = ({
                                   </>
                                 )}
 
+                                {hasFilter && !useClientSideFiltering && (
+                                  <button
+                                    onClick={() => {
+                                      applyBackendFilter(column.key);
+                                      setShowFilterMenu(null);
+                                    }}
+                                    className="w-full px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition text-sm font-medium"
+                                  >
+                                    Apply Filter
+                                  </button>
+                                )}
+
                                 {hasFilter && (
                                   <button
                                     onClick={() => {
@@ -1136,7 +1088,7 @@ export const DataTable: React.FC<TableProps> = ({
               >
                 {visibleColumns.map((column) => {
                   const colType = getColumnType(column.key);
-                  let cellValue = row[column.key];
+                  let cellValue = getCellValue(row, column.key);
                   let displayValue = "";
                   if (colType === "date" && cellValue) {
                     const dateObj = new Date(cellValue);

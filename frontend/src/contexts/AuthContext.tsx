@@ -20,6 +20,7 @@ interface User {
   department?: string;
   mac_id?: string;
   is_active?: boolean;
+  must_change_password?: boolean;
 }
 
 interface AuthContextType {
