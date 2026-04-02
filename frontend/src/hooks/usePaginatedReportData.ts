@@ -6,6 +6,35 @@ export interface ColumnConfigItem {
   field_name: string;
   display_name: string;
   display_order?: number;
+  /** ReportField.decimal_places — when set, format numbers to this many fractional digits in the UI */
+  decimal_places?: number | null;
+  /** Optional enum mapping (raw value -> label) for frontend display */
+  enum_map?: Record<string, string>;
+}
+
+function normalizeEnumMap(raw: unknown): Record<string, string> | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const map: Record<string, string> = {};
+  raw.forEach((item) => {
+    if (!item || typeof item !== "object") return;
+    const rec = item as Record<string, unknown>;
+    // Keep active options only when flag exists.
+    if (typeof rec.is_active === "boolean" && rec.is_active === false) return;
+    const value = rec.value;
+    if (value === null || value === undefined) return;
+    const key = String(value).trim();
+    if (!key) return;
+    const label = String((rec.label ?? rec.value ?? "")).trim();
+    map[key] = label || key;
+  });
+  return Object.keys(map).length ? map : undefined;
+}
+
+function parseDecimalPlaces(raw: unknown): number | null | undefined {
+  if (raw === null || raw === undefined || raw === "") return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return undefined;
+  return Math.min(20, Math.floor(n));
 }
 
 /** Normalize column config from API (may use column_config or columnConfig, and field/label or field_name/display_name). */
@@ -23,6 +52,8 @@ export function normalizeColumnConfig(raw: unknown): ColumnConfigItem[] {
       field_name: String(c.field_name ?? c.field ?? c.key),
       display_name: String(c.display_name ?? c.label ?? c.field_name ?? c.field ?? c.key ?? "").trim() || String(c.field_name ?? c.field ?? c.key),
       display_order: typeof c.display_order === "number" ? c.display_order : undefined,
+      decimal_places: parseDecimalPlaces(c.decimal_places),
+      enum_map: normalizeEnumMap(c.enum_values),
     }));
   return normalized.sort((a, b) => {
     const oa = a.display_order ?? 9999;

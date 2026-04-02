@@ -348,6 +348,8 @@ export const ReportPaginatedViewerPage: React.FC = () => {
       ? effectiveColumnConfig.map((c: ColumnConfigItem) => ({
           key: resolveKey(c.field_name),
           label: c.display_name || c.field_name,
+          decimal_places: c.decimal_places,
+          enum_map: c.enum_map,
         }))
       : displayData.length > 0
         ? Object.keys(displayData[0]).map((key) => ({

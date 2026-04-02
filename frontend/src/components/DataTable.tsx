@@ -15,8 +15,17 @@ interface ColumnFilter {
   value2?: string; // For between operator
 }
 
+interface TableColumn {
+  key: string;
+  label: string;
+  /** When set (from ReportField), format numeric cells with this many decimal places */
+  decimal_places?: number | null;
+  /** Optional enum mapping (raw value -> label) */
+  enum_map?: Record<string, string>;
+}
+
 interface TableProps {
-  columns: { key: string; label: string }[];
+  columns: TableColumn[];
   data: any[];
   loadedChunk?: any[]; // Full loaded chunk for client-side filtering (optional)
   isLoading?: boolean;
@@ -120,6 +129,43 @@ export const DataTable: React.FC<TableProps> = ({
     const target = normalizeKey(key);
     const matched = Object.keys(row).find((k) => normalizeKey(k) === target);
     return matched ? row[matched] : undefined;
+  };
+
+  /** Format using ReportField decimal_places only — not inferred from typeof number */
+  const formatConfiguredDecimal = (
+    value: unknown,
+    decimalPlaces: number | null | undefined,
+  ): string | null => {
+    if (decimalPlaces == null || decimalPlaces < 0) return null;
+    if (value === null || value === undefined || value === "") return null;
+    if (typeof value === "boolean") return null;
+    const num =
+      typeof value === "number" ? value : Number(String(value).trim());
+    if (!Number.isFinite(num)) return null;
+    return num.toFixed(decimalPlaces);
+  };
+
+  const resolveEnumLabel = (
+    value: unknown,
+    enumMap?: Record<string, string>,
+  ): string | null => {
+    if (!enumMap || value === null || value === undefined) return null;
+    const raw = String(value).trim();
+    if (Object.prototype.hasOwnProperty.call(enumMap, raw)) {
+      return enumMap[raw];
+    }
+    const n = Number(raw);
+    if (Number.isFinite(n)) {
+      const intLike = String(Math.trunc(n));
+      if (Object.prototype.hasOwnProperty.call(enumMap, intLike)) {
+        return enumMap[intLike];
+      }
+      const floatLike = n % 1 === 0 ? `${Math.trunc(n)}.0` : String(n);
+      if (Object.prototype.hasOwnProperty.call(enumMap, floatLike)) {
+        return enumMap[floatLike];
+      }
+    }
+    return null;
   };
 
   // Keep column order and widths in sync when columns prop changes (e.g., new report schema)
@@ -1090,7 +1136,10 @@ export const DataTable: React.FC<TableProps> = ({
                   const colType = getColumnType(column.key);
                   let cellValue = getCellValue(row, column.key);
                   let displayValue = "";
-                  if (colType === "date" && cellValue) {
+                  const enumLabel = resolveEnumLabel(cellValue, column.enum_map);
+                  if (enumLabel !== null) {
+                    displayValue = enumLabel;
+                  } else if (colType === "date" && cellValue) {
                     const dateObj = new Date(cellValue);
                     if (!isNaN(dateObj.getTime())) {
                       const dd = String(dateObj.getDate()).padStart(2, "0");
@@ -1104,7 +1153,12 @@ export const DataTable: React.FC<TableProps> = ({
                       displayValue = String(cellValue);
                     }
                   } else {
-                    displayValue = String(cellValue || "");
+                    const fixed = formatConfiguredDecimal(
+                      cellValue,
+                      column.decimal_places,
+                    );
+                    displayValue =
+                      fixed !== null ? fixed : String(cellValue ?? "");
                   }
                   return (
                     <td

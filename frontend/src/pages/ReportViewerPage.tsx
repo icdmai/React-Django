@@ -610,6 +610,8 @@ export const ReportViewerPage: React.FC = () => {
       ? effectiveColumnConfig.map((c) => ({
           key: resolveKey(c.field_name),
           label: c.display_name || c.field_name,
+          decimal_places: c.decimal_places,
+          enum_map: c.enum_map,
         }))
       : filteredData.length > 0
       ? Object.keys(filteredData[0]).map((key) => ({
