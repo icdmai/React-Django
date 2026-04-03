@@ -5,6 +5,8 @@ import { getReportAccessErrorMessage } from "../services/clientMac";
 export interface ColumnConfigItem {
   field_name: string;
   display_name: string;
+  field_type?: string;
+  filter_widget?: string;
   display_order?: number;
   /** ReportField.decimal_places — when set, format numbers to this many fractional digits in the UI */
   decimal_places?: number | null;
@@ -24,7 +26,7 @@ function normalizeEnumMap(raw: unknown): Record<string, string> | undefined {
     if (value === null || value === undefined) return;
     const key = String(value).trim();
     if (!key) return;
-    const label = String((rec.label ?? rec.value ?? "")).trim();
+    const label = String(rec.label ?? rec.value ?? "").trim();
     map[key] = label || key;
   });
   return Object.keys(map).length ? map : undefined;
@@ -43,15 +45,31 @@ export function normalizeColumnConfig(raw: unknown): ColumnConfigItem[] {
     return (raw as string[]).map((s) => ({
       field_name: s,
       display_name: s.replace(/_/g, " ").toUpperCase(),
+      field_type: "string",
+      filter_widget: "text",
     }));
   }
   const arr = Array.isArray(raw) ? raw : [];
   const normalized = arr
-    .filter((c) => c && typeof c === "object" && (c.field_name ?? c.field ?? c.key))
+    .filter(
+      (c) => c && typeof c === "object" && (c.field_name ?? c.field ?? c.key),
+    )
     .map((c: Record<string, unknown>) => ({
       field_name: String(c.field_name ?? c.field ?? c.key),
-      display_name: String(c.display_name ?? c.label ?? c.field_name ?? c.field ?? c.key ?? "").trim() || String(c.field_name ?? c.field ?? c.key),
-      display_order: typeof c.display_order === "number" ? c.display_order : undefined,
+      display_name:
+        String(
+          c.display_name ?? c.label ?? c.field_name ?? c.field ?? c.key ?? "",
+        ).trim() || String(c.field_name ?? c.field ?? c.key),
+      field_type:
+        typeof c.field_type === "string"
+          ? c.field_type
+          : typeof c.type === "string"
+            ? c.type
+            : undefined,
+      filter_widget:
+        typeof c.filter_widget === "string" ? c.filter_widget : undefined,
+      display_order:
+        typeof c.display_order === "number" ? c.display_order : undefined,
       decimal_places: parseDecimalPlaces(c.decimal_places),
       enum_map: normalizeEnumMap(c.enum_values),
     }));
@@ -261,8 +279,8 @@ export const usePaginatedReportData = ({
       const newChunkData = Array.isArray(responseData.data)
         ? responseData.data
         : Array.isArray(responseData.results)
-        ? responseData.results
-        : [];
+          ? responseData.results
+          : [];
       const hasMoreFromAPI =
         responseData.has_next !== undefined
           ? responseData.has_next

@@ -330,8 +330,9 @@ export const ReportPaginatedViewerPage: React.FC = () => {
   const fromReport = report
     ? normalizeColumnConfig(report.column_config ?? report.columns)
     : [];
-  const effectiveColumnConfig =
-    (columnConfig && columnConfig.length > 0 ? columnConfig : fromReport) as ColumnConfigItem[];
+  const effectiveColumnConfig = (
+    columnConfig && columnConfig.length > 0 ? columnConfig : fromReport
+  ) as ColumnConfigItem[];
 
   // Resolve column key to actual row key (so cells render when API uses different casing)
   const firstRow = displayData.length > 0 ? displayData[0] : null;
@@ -348,6 +349,8 @@ export const ReportPaginatedViewerPage: React.FC = () => {
       ? effectiveColumnConfig.map((c: ColumnConfigItem) => ({
           key: resolveKey(c.field_name),
           label: c.display_name || c.field_name,
+          field_type: c.field_type,
+          filter_widget: c.filter_widget,
           decimal_places: c.decimal_places,
           enum_map: c.enum_map,
         }))

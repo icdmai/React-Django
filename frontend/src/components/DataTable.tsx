@@ -18,6 +18,8 @@ interface ColumnFilter {
 interface TableColumn {
   key: string;
   label: string;
+  field_type?: string;
+  filter_widget?: string;
   /** When set (from ReportField), format numeric cells with this many decimal places */
   decimal_places?: number | null;
   /** Optional enum mapping (raw value -> label) */
@@ -48,6 +50,8 @@ interface TableProps {
 }
 
 type SortDirection = "asc" | "desc" | null;
+
+type ResolvedColumnType = "text" | "number" | "date" | "boolean";
 
 export const DataTable: React.FC<TableProps> = ({
   columns,
@@ -121,7 +125,9 @@ export const DataTable: React.FC<TableProps> = ({
   const resizeXRef = React.useRef<number | null>(null);
 
   const normalizeKey = (key: string): string =>
-    String(key).toLowerCase().replace(/[^a-z0-9]/g, "");
+    String(key)
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "");
 
   const getCellValue = (row: Record<string, any>, key: string) => {
     if (row == null) return undefined;
@@ -277,10 +283,7 @@ export const DataTable: React.FC<TableProps> = ({
     };
   }, [resizingColumn]);
 
-  // Detect column data type
-  const getColumnType = (
-    key: string,
-  ): "text" | "number" | "date" | "boolean" => {
+  const inferColumnTypeFromData = (key: string): ResolvedColumnType => {
     if (data.length === 0) return "text";
     const sample = data.find((row) => getCellValue(row, key) != null);
     if (!sample) return "text";
@@ -295,6 +298,21 @@ export const DataTable: React.FC<TableProps> = ({
       }
     }
     return "text";
+  };
+
+  // Resolve column data type from backend metadata first, then fall back to value inference.
+  const getColumnType = (column: TableColumn): ResolvedColumnType => {
+    const widget = String(column.filter_widget || "").toLowerCase();
+    if (widget === "date") return "date";
+    if (widget === "number") return "number";
+
+    const fieldType = String(column.field_type || "").toLowerCase();
+    if (fieldType === "date" || fieldType === "datetime") return "date";
+    if (fieldType === "number" || fieldType === "currency") return "number";
+    if (fieldType === "boolean") return "boolean";
+    if (fieldType === "string") return "text";
+
+    return inferColumnTypeFromData(column.key);
   };
 
   // Apply filtering
@@ -525,7 +543,12 @@ export const DataTable: React.FC<TableProps> = ({
   ) => {
     const newFilter: ColumnFilter = {
       ...(columnFilters[columnKey] || {
-        type: getColumnType(columnKey),
+        type: getColumnType(
+          columns.find((column) => column.key === columnKey) || {
+            key: columnKey,
+            label: columnKey,
+          },
+        ),
         value: "",
       }),
       ...filterData,
@@ -655,24 +678,24 @@ export const DataTable: React.FC<TableProps> = ({
               {Object.entries(columnFilters)
                 .filter(([, f]) => f.value || f.operator === "between")
                 .map(([key, filter]) => (
-                <span
-                  key={key}
-                  className="inline-flex items-center gap-2 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm"
-                >
-                  <span className="font-medium">{key}:</span>
-                  <span>
-                    {filter.operator === "between"
-                      ? `${filter.value} - ${filter.value2}`
-                      : `${filter.operator || "contains"} "${filter.value}"`}
-                  </span>
-                  <button
-                    onClick={() => clearFilter(key)}
-                    className="hover:text-blue-600 ml-1"
+                  <span
+                    key={key}
+                    className="inline-flex items-center gap-2 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm"
                   >
-                    ×
-                  </button>
-                </span>
-              ))}
+                    <span className="font-medium">{key}:</span>
+                    <span>
+                      {filter.operator === "between"
+                        ? `${filter.value} - ${filter.value2}`
+                        : `${filter.operator || "contains"} "${filter.value}"`}
+                    </span>
+                    <button
+                      onClick={() => clearFilter(key)}
+                      className="hover:text-blue-600 ml-1"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
               {useClientSideFiltering && chunkInfo && (
                 <span className="text-xs text-blue-700">
                   ({filteredData.length} of{" "}
@@ -801,7 +824,7 @@ export const DataTable: React.FC<TableProps> = ({
               className={`sticky top-0 ${compact ? "bg-gray-100" : "bg-gray-50"} border-b border-gray-200`}
             >
               {visibleColumns.map((column) => {
-                const colType = getColumnType(column.key);
+                const colType = getColumnType(column);
                 const hasFilter = columnFilters[column.key];
                 const isSorted = sortColumn === column.key;
 
@@ -1133,10 +1156,13 @@ export const DataTable: React.FC<TableProps> = ({
                 } ${compact ? "text-sm" : "text-base"}`}
               >
                 {visibleColumns.map((column) => {
-                  const colType = getColumnType(column.key);
+                  const colType = getColumnType(column);
                   let cellValue = getCellValue(row, column.key);
                   let displayValue = "";
-                  const enumLabel = resolveEnumLabel(cellValue, column.enum_map);
+                  const enumLabel = resolveEnumLabel(
+                    cellValue,
+                    column.enum_map,
+                  );
                   if (enumLabel !== null) {
                     displayValue = enumLabel;
                   } else if (colType === "date" && cellValue) {

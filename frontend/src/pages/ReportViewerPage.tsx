@@ -282,11 +282,16 @@ export const ReportViewerPage: React.FC = () => {
         page_size: pageSize,
       };
 
-      const searchResponse = await reportsAPI.searchCascade(Number(id), payload);
+      const searchResponse = await reportsAPI.searchCascade(
+        Number(id),
+        payload,
+      );
       const response = searchResponse.data;
 
       if (response && response.found === false) {
-        setFilterMessage(response.message || "No records match the current filters");
+        setFilterMessage(
+          response.message || "No records match the current filters",
+        );
         return;
       }
 
@@ -427,8 +432,8 @@ export const ReportViewerPage: React.FC = () => {
           const newData = Array.isArray(response.data)
             ? response.data
             : Array.isArray(response.results)
-            ? response.results
-            : [];
+              ? response.results
+              : [];
           const total = response.count || response.total_rows || 0;
           const totalPages = response.total_pages || 1;
 
@@ -477,8 +482,8 @@ export const ReportViewerPage: React.FC = () => {
           const allData = Array.isArray(response.data)
             ? response.data
             : Array.isArray(response.results)
-            ? response.results
-            : [];
+              ? response.results
+              : [];
           const total = response.row_count || response.count || allData.length;
 
           const rawCc =
@@ -546,7 +551,15 @@ export const ReportViewerPage: React.FC = () => {
     };
 
     fetchData();
-  }, [report, id, currentPage, pageSize, usePaginatedAPI, isSearchMode, refreshTick]);
+  }, [
+    report,
+    id,
+    currentPage,
+    pageSize,
+    usePaginatedAPI,
+    isSearchMode,
+    refreshTick,
+  ]);
 
   const loadMoreData = () => {
     if (!isLoadingData && hasMore) {
@@ -600,9 +613,7 @@ export const ReportViewerPage: React.FC = () => {
     if (!firstRow) return fieldName;
     if (fieldName in firstRow) return fieldName;
     const target = normalizeKey(fieldName);
-    const found = Object.keys(firstRow).find(
-      (k) => normalizeKey(k) === target,
-    );
+    const found = Object.keys(firstRow).find((k) => normalizeKey(k) === target);
     return found ?? fieldName;
   };
   const columns =
@@ -610,15 +621,17 @@ export const ReportViewerPage: React.FC = () => {
       ? effectiveColumnConfig.map((c) => ({
           key: resolveKey(c.field_name),
           label: c.display_name || c.field_name,
+          field_type: c.field_type,
+          filter_widget: c.filter_widget,
           decimal_places: c.decimal_places,
           enum_map: c.enum_map,
         }))
       : filteredData.length > 0
-      ? Object.keys(filteredData[0]).map((key) => ({
-          key,
-          label: key.replace(/_/g, " ").toUpperCase(),
-        }))
-      : [];
+        ? Object.keys(filteredData[0]).map((key) => ({
+            key,
+            label: key.replace(/_/g, " ").toUpperCase(),
+          }))
+        : [];
 
   return (
     <div className="min-h-[calc(100vh-64px)] px-2 py-3">
